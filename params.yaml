@@ -1,0 +1,15 @@
+data:
+  n_samples: 5000
+  random_state: 42
+
+model:
+  threshold: 0.50
+  params:
+    n_estimators: 250
+    max_depth: 4
+    learning_rate: 0.05
+    subsample: 0.80
+    colsample_bytree: 0.80
+    min_child_weight: 3
+    gamma: 0.10
+    reg_lambda: 1.0

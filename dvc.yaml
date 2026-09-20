@@ -1,0 +1,32 @@
+stages:
+  collect:
+    cmd: python -m ml.data.generate
+    deps:
+      - ml/data/generate.py
+      - ml/data/schema.py
+      - configs/config.yaml
+    params:
+      - data.n_samples
+      - data.random_state
+    outs:
+      - data/raw/telco_churn.csv
+
+  train:
+    cmd: python -m ml.training.train
+    deps:
+      - data/raw/telco_churn.csv
+      - ml/features/engineer.py
+      - ml/training/train.py
+      - ml/training/evaluate.py
+      - configs/config.yaml
+    params:
+      - model.params
+      - model.threshold
+    outs:
+      - artifacts/models/churn_pipeline.joblib
+      - artifacts/models/metadata.json
+    metrics:
+      - artifacts/metrics/metrics.json:
+          cache: false
+      - artifacts/metrics/feature_importance.json:
+          cache: false

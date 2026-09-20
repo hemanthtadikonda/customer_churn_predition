@@ -1,0 +1,12 @@
+services:
+  churn-api:
+    build:
+      context: ..
+      dockerfile: mlops/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../configs:/app/configs
+    environment:
+      PYTHONPATH: /app

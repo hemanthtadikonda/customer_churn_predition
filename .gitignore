@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.env
+.python-version
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Data and models (regenerate locally)
+data/raw/*.csv
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+artifacts/models/*
+artifacts/metrics/*
+!artifacts/models/.gitkeep
+!artifacts/metrics/.gitkeep
+
+# MLOps local state
+mlruns/
+.mlflow/
+.dvc/tmp/
+.dvc/cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
