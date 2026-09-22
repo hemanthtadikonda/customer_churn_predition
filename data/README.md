@@ -55,6 +55,22 @@ data/
   synthetic/   labeled synthetic snapshots, including time partitions
 ```
 
-## Commands
+## Commands (Linux)
 
-See `data_acquisition/README.md` and the root `README.md`.
+From the repo root, after `source .venv/bin/activate`. Full setup is in the root `README.md`.
+
+```bash
+python3 -m data_acquisition.synthetic_source --number-of-records 2000 --random-seed 42
+python3 -m data_acquisition.database_init
+python3 -m data_acquisition.database_source
+python3 -m data_acquisition.api_source
+python3 -m data_acquisition.download   # network; catalog-approved IBM sample only
+
+python3 -m data_validation.validate \
+  --input data/synthetic/2026-01/customers.csv \
+  --schema synthetic_operational \
+  --strict
+
+python3 -m data_preparation.prepare \
+  --input data/synthetic/2026-01/customers.csv
+```

@@ -53,8 +53,11 @@ Lineage JSON records input checksum and row counts. Cleaning is deterministic.
 
 ## How to run it
 
+Linux, from the repo root, after `source .venv/bin/activate`:
+
 ```bash
-python -m data_preparation.prepare --input data/synthetic/2026-01/customers.csv
+python3 -m data_preparation.prepare \
+  --input data/synthetic/2026-01/customers.csv
 ```
 
 ## Current vs production

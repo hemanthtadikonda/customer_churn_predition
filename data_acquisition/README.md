@@ -57,16 +57,21 @@ CSV downloads skip existing raw files unless `--overwrite`. Synthetic output is 
 
 ## How to run it
 
+Linux, from the repo root, after `source .venv/bin/activate`:
+
 ```bash
-python -m data_acquisition.download
-python -m data_acquisition.database_init
-python -m data_acquisition.database_source
-python -m data_acquisition.api_source
-python -m data_acquisition.synthetic_source --number-of-records 2000 --random-seed 42
-python -m data_acquisition.orchestrator --sources synthetic,database,api --init-database
+python3 -m data_acquisition.synthetic_source --number-of-records 2000 --random-seed 42
+python3 -m data_acquisition.database_init
+python3 -m data_acquisition.database_source
+python3 -m data_acquisition.api_source
+python3 -m data_acquisition.orchestrator --sources synthetic,database,api --init-database
 ```
 
-Public CSV download needs network access and uses only catalog-approved URLs.
+Public CSV download needs network access and uses only catalog-approved URLs:
+
+```bash
+python3 -m data_acquisition.download
+```
 
 ## Current vs production
 

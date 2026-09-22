@@ -42,9 +42,17 @@ The same file and schema must produce the same status. Thresholds are config, no
 
 ## How to run it
 
+Linux, from the repo root, after `source .venv/bin/activate`:
+
 ```bash
-python -m data_validation.validate --input data/synthetic/2026-01/customers.csv --schema synthetic_operational --strict
-python -m data_validation.quality_report --input data/synthetic/2026-01/customers.csv --schema synthetic_operational
+python3 -m data_validation.validate \
+  --input data/synthetic/2026-01/customers.csv \
+  --schema synthetic_operational \
+  --strict
+
+python3 -m data_validation.quality_report \
+  --input data/synthetic/2026-01/customers.csv \
+  --schema synthetic_operational
 ```
 
 ## Current vs production

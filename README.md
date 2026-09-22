@@ -20,29 +20,50 @@ docs/                   # architecture, sources, dictionary, lineage, decisions
 
 Public samples, synthetic data, and simulated operational systems are kept distinct. See `docs/architecture.md` and `docs/decisions.md`.
 
-### Initialize and acquire
+### Initialize and acquire (Linux)
 
-Requires Python 3.12+.
+Requires Python 3.12+. Run every command from the repo root, with the virtualenv activated.
+
+If `python3` is missing on Ubuntu/Debian:
 
 ```bash
-python -m venv .venv
-# Windows: .venv\Scripts\activate
-# macOS/Linux: source .venv/bin/activate
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+```
+
+```bash
+python3 --version
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
 pip install -r requirements.txt
 
-python -m data_acquisition.synthetic_source
-python -m data_acquisition.database_init
-python -m data_acquisition.database_source
-python -m data_acquisition.api_source
-python -m data_validation.validate --input data/synthetic/2026-01/customers.csv --schema synthetic_operational
-python -m data_preparation.prepare --input data/synthetic/2026-01/customers.csv
+python3 -m data_acquisition.synthetic_source --number-of-records 2000 --random-seed 42
+python3 -m data_acquisition.database_init
+python3 -m data_acquisition.database_source
+python3 -m data_acquisition.api_source
+
+python3 -m data_validation.validate \
+  --input data/synthetic/2026-01/customers.csv \
+  --schema synthetic_operational \
+  --strict
+
+python3 -m data_preparation.prepare \
+  --input data/synthetic/2026-01/customers.csv
+
 pytest -q
 ```
 
-Networked public CSV (catalog-approved IBM Telco sample only):
+One-shot orchestrator instead of the individual source commands:
 
 ```bash
-python -m data_acquisition.download
+python3 -m data_acquisition.orchestrator --sources synthetic,database,api --init-database
+```
+
+Public IBM Telco CSV (needs network; catalog-approved URL only):
+
+```bash
+python3 -m data_acquisition.download
 ```
 
 Do not commit `data/raw`, `data/synthetic`, or a real `.env`. Copy `.env.example` if you later switch the database driver to PostgreSQL.
@@ -92,8 +113,8 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-python -m ml.data.generate
-python -m ml.training.train
+python3 -m ml.data.generate
+python3 -m ml.training.train
 pytest -q
 uvicorn api.main:app --reload
 ```
