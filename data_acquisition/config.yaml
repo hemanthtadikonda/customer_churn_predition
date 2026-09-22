@@ -1,0 +1,85 @@
+project:
+  name: customer-churn-prediction
+  component: data_acquisition
+
+paths:
+  catalog: data/sources/dataset_catalog.yaml
+  raw_dir: data/raw
+  interim_dir: data/interim
+  processed_dir: data/processed
+  synthetic_dir: data/synthetic
+
+csv:
+  dataset_id: ibm_telco_customer_churn
+  timeout_seconds: 30
+  max_retries: 3
+  retry_backoff_seconds: 1.5
+  user_agent: customer-churn-prediction-platform/0.1 (educational portfolio)
+  overwrite: false
+
+database:
+  # LOCAL SIMULATION of a production customer database.
+  # Current: SQLite file. Production: PostgreSQL/Aurora/RDS via env vars.
+  driver: sqlite
+  sqlite_path: data/sources/local_ops.sqlite
+  snapshot_dir: data/raw/database
+  connect_timeout_seconds: 10
+  postgresql:
+    host_env: POSTGRES_HOST
+    port_env: POSTGRES_PORT
+    database_env: POSTGRES_DB
+    user_env: POSTGRES_USER
+    password_env: POSTGRES_PASSWORD
+  queries:
+    customers: "SELECT * FROM customers"
+    subscriptions: "SELECT * FROM subscriptions"
+    billing: "SELECT * FROM billing"
+    support_interactions: "SELECT * FROM support_interactions"
+    customer_usage: "SELECT * FROM customer_usage"
+
+database_init:
+  n_customers: 500
+  random_seed: 42
+
+api:
+  # LOCAL MOCK of an external operational API. Not a real telecom vendor.
+  mode: mock
+  snapshot_dir: data/raw/api
+  timeout_seconds: 10
+  max_retries: 3
+  retry_backoff_seconds: 0.5
+  page_size: 100
+  rate_limit_sleep_seconds: 0.05
+  mock:
+    host: 127.0.0.1
+    port: 8099
+    label: LOCAL SIMULATION — not a real external telecom API
+  public:
+    base_url_env: CHURN_API_BASE_URL
+    token_env: CHURN_API_TOKEN
+
+synthetic:
+  number_of_records: 2000
+  random_seed: 42
+  output_format: csv
+  output_dir: data/synthetic
+  snapshots:
+    - period: "2026-01"
+      drift_factor: 0.0
+    - period: "2026-02"
+      drift_factor: 0.15
+    - period: "2026-03"
+      drift_factor: 0.30
+
+validation:
+  reports_dir: data/interim/validation_reports
+  warn_null_fraction: 0.05
+  fail_null_fraction: 0.30
+  warn_duplicate_fraction: 0.01
+  fail_duplicate_fraction: 0.05
+  min_churn_rate: 0.05
+  max_churn_rate: 0.55
+
+preparation:
+  interim_dir: data/interim
+  processed_dir: data/processed

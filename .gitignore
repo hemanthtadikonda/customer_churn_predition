@@ -15,11 +15,21 @@ venv/
 .coverage
 htmlcov/
 
-# Data and models (regenerate locally)
-data/raw/*.csv
-data/processed/*
+# Data and models (regenerate locally; do not commit datasets)
+data/raw/**
 !data/raw/.gitkeep
+data/interim/**
+!data/interim/.gitkeep
+data/processed/**
 !data/processed/.gitkeep
+data/synthetic/**
+!data/synthetic/.gitkeep
+data/sources/*.sqlite
+data/sources/*.db
+*.sqlite
+*.db
+.env
+!.env.example
 artifacts/models/*
 artifacts/metrics/*
 !artifacts/models/.gitkeep

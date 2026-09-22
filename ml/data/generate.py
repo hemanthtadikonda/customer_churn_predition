@@ -3,6 +3,10 @@
 In production a data scientist would pull this from a warehouse, CRM, or
 billing system. Here we generate an IBM Telco-style table with realistic
 churn drivers so the rest of the MLOps pipeline can run offline.
+
+The data-foundation generators now live in data_acquisition/. This module
+remains the IBM-schema helper used by the existing training/DVC path until
+that path is rewired. Do not treat its output as a public raw extract.
 """
 
 from __future__ import annotations

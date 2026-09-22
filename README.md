@@ -1,5 +1,54 @@
 # Customer Churn Prediction Platform
 
+End-to-end portfolio for telco churn, starting with a **production-style data foundation**. Model training still exists from an earlier step; this phase does not expand it.
+
+The intended lifecycle is:
+
+Data acquisition → validation → versioning → preparation → feature engineering → training → experiment tracking → registry → CI/CD → containers → Kubernetes → serving → monitoring → drift → retraining.
+
+**This phase implements the data foundation only.**
+
+## Data foundation (current phase)
+
+```text
+data/                   # lake layout: raw / interim / processed / synthetic / sources
+data_acquisition/       # public CSV, SQLite simulation, mock API, synthetic snapshots
+data_validation/        # PASS / WARN / FAIL reports; never mutates raw files
+data_preparation/       # cleaned + processed copies; no model features yet
+docs/                   # architecture, sources, dictionary, lineage, decisions
+```
+
+Public samples, synthetic data, and simulated operational systems are kept distinct. See `docs/architecture.md` and `docs/decisions.md`.
+
+### Initialize and acquire
+
+Requires Python 3.12+.
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+
+python -m data_acquisition.synthetic_source
+python -m data_acquisition.database_init
+python -m data_acquisition.database_source
+python -m data_acquisition.api_source
+python -m data_validation.validate --input data/synthetic/2026-01/customers.csv --schema synthetic_operational
+python -m data_preparation.prepare --input data/synthetic/2026-01/customers.csv
+pytest -q
+```
+
+Networked public CSV (catalog-approved IBM Telco sample only):
+
+```bash
+python -m data_acquisition.download
+```
+
+Do not commit `data/raw`, `data/synthetic`, or a real `.env`. Copy `.env.example` if you later switch the database driver to PostgreSQL.
+
+## Existing ML path (unchanged this phase)
+
 Predict whether a telco customer is likely to leave, using **XGBoost** as the core model.
 
 This repo is structured the way a real team hands work off:
@@ -13,7 +62,12 @@ XGBoost is the default here because it is still the workhorse for tabular churn:
 ## Project layout
 
 ```text
-ml/                     # ML code folder
+data/                   # immutable raw, interim, processed, synthetic, source catalog
+data_acquisition/       # source adapters + orchestrator
+data_validation/        # schema and quality reports
+data_preparation/       # cleaning framework
+docs/                   # data architecture documentation
+ml/                     # ML code folder (existing)
   data/                 # collection, schema, train/val/test split
   features/             # feature engineering shipped with the model
   training/             # XGBoost train + quality gate
@@ -31,7 +85,7 @@ The same `ChurnFeatureEngineer` runs during training and at `/predict`. That is 
 
 ## Quickstart
 
-Requires Python 3.11+.
+Requires Python 3.12+.
 
 ```bash
 python3 -m venv .venv
@@ -99,7 +153,10 @@ docker compose -f mlops/docker-compose.yml up --build
 
 ## Next MLOps practice steps
 
-- Replace the synthetic generator with a warehouse extract and add DVC data tracking (`dvc init`, `dvc add data/raw`).
+The data foundation in `data_acquisition/`, `data_validation/`, and `data_preparation/` is the next wiring target for DVC and training.
+
+- Point `dvc.yaml` collect at catalog-approved raw extracts instead of `ml.data.generate`.
+- Add DVC remotes (`dvc add data/raw`) once a bucket exists.
 - Tune the serving threshold for recall vs precision on a cost matrix.
 - Add SHAP plots from the frozen pipeline for stakeholder explainability.
 - Register the MLflow model and promote Staging → Production.
