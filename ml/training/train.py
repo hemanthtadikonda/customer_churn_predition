@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +21,9 @@ from ml.training.evaluate import compute_metrics, quality_gate, save_json
 
 
 def _maybe_start_mlflow(config: dict):
+    # Recent MLflow releases refuse the local directory backend unless this
+    # is set. The project tracks runs under mlruns/, so keep that store.
+    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
     try:
         import mlflow
     except ImportError:

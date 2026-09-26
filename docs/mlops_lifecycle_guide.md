@@ -35,7 +35,7 @@ Your session completed the **data foundation**. It did not train a model. That i
 | Validation of `data/synthetic/2026-01/customers.csv` | `PASS` | The file matches the `synthetic_operational` contract. |
 | Preparation | Wrote interim + processed CSVs | Cleaning copied data forward. Raw files were not edited. |
 | Public IBM CSV download | 7043 rows, sha256 recorded | Research sample landed in `data/raw/Telco-Customer-Churn.csv`. |
-| `pytest -q` | **36 passed, 1 failed** | Data-foundation tests passed. One older model-schema test failed. Explained in section 4. |
+| `pytest -q` | **37 passed** | Acquisition, validation, preparation, API, and model-schema tests passed. |
 | `git status` | Only untracked `data/sources/local_ops.sqlite.init.json` | Generated data is gitignored. Do not commit that JSON. |
 
 `ls | wc -l` stayed at **16** after every data command. That number is the count of names in the repo root (`README.md`, `data/`, `api/`, …). New files were created **inside** `data/`, so the root count does not change. Confirm the data with:
@@ -219,34 +219,17 @@ processed=/root/customer_churn_predition/data/processed/customers.processed.csv
 pytest -q
 ```
 
-Pytest is the CI check (the same suite `.github/workflows/ci.yml` runs). **36 passed** means acquisition, validation, preparation, API, and most model tests are healthy on this machine.
+Pytest is the CI check (the same suite `.github/workflows/ci.yml` runs). **37 passed** means acquisition, validation, preparation, API, and model-schema tests are healthy on this machine.
+
+If you still see `test_generated_data_matches_contract` fail with `'gender' != 'tenure'`, pull the latest `dev` and rerun `pytest -q`. That failure was the generator emitting IBM spreadsheet order (`gender` in column 2) while `REQUIRED_COLUMNS` puts `tenure` there. `generate_churn_dataset()` now reorders to the contract before it returns.
 
 ---
 
-## 4. The one failed test — read this before you worry
+## 4. Schema contract
 
-```text
-FAILED tests/test_schema.py::test_generated_data_matches_contract
-AssertionError: at index 1 diff: 'gender' != 'tenure'
-```
+`tests/test_schema.py` builds a small table with `generate_churn_dataset()` and requires the **column order** to equal `REQUIRED_COLUMNS`: customer id, then numeric fields (`tenure`, `MonthlyCharges`, `TotalCharges`), then categoricals, then `Churn`.
 
-This test builds a small table with `generate_churn_dataset()` and then requires the **column order** to equal `REQUIRED_COLUMNS`.
-
-The generator writes columns in IBM spreadsheet order: `customerID`, `gender`, `SeniorCitizen`, …, `tenure` later.
-
-`REQUIRED_COLUMNS` in `ml/data/schema.py` is built as id, then numeric fields (`tenure` first), then categoricals (`gender` later). So position 1 is `gender` in the frame and `tenure` in the expected list.
-
-`validate_dataframe()` checks names, allowed values, and consistency. It does **not** require order. The generator calls that function and passes. The unit test adds a stricter order check, and that check fails.
-
-What this does **not** mean:
-
-- The virtualenv is broken.
-- The synthetic, SQLite, API, or IBM downloads are bad.
-- Training will refuse to start.
-
-Training selects columns **by name** (`FEATURE_COLUMNS`), not by position. You can continue.
-
-Leave the failure as a known gap for now. Do not “fix” it by reordering data files by hand. A code fix belongs in a later change to either the test or `REQUIRED_COLUMNS`.
+`validate_dataframe()` checks names, allowed values, and consistency. The unit test also checks order. Training still selects columns **by name** (`FEATURE_COLUMNS`), so a CSV saved in IBM order can still train. The generator itself now writes contract order so the test and the saved synthetic file agree.
 
 ---
 
@@ -401,7 +384,7 @@ How to read the numbers, slowly:
 
 Feature importance is a ranked list of encoded columns the trees used. Names look like `cat__Contract_Month-to-month` because the one-hot encoder prefixed them. High rank means “the model split on this a lot.” It is an explanation aid, not a proof of cause.
 
-MLflow wrote a local experiment under `mlruns/`. You do not need the MLflow UI for this session. The JSON files above are the source of truth you can read in the terminal.
+MLflow writes a local experiment under `mlruns/`. Newer MLflow releases block that directory store unless `MLFLOW_ALLOW_FILE_STORE=true`. The trainer sets that itself before it opens the experiment, so you do not export it by hand. You do not need the MLflow UI for this session. The JSON files above are the source of truth you can read in the terminal.
 
 `git status` will show new untracked or ignored paths under `data/raw/telco_churn.csv`, `artifacts/`, and `mlruns/`. Those are generated outputs. Do not commit them.
 

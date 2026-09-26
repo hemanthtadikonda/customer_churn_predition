@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from ml.config import load_config, resolve_path
-from ml.data.schema import TARGET_COL, validate_dataframe
+from ml.data.schema import REQUIRED_COLUMNS, TARGET_COL, validate_dataframe
 
 
 def _choice(rng: np.random.Generator, options: list, size: int, p=None) -> np.ndarray:
@@ -149,6 +149,7 @@ def generate_churn_dataset(n_samples: int = 5000, random_state: int = 42) -> pd.
             TARGET_COL: churn,
         }
     )
+    frame = frame.loc[:, REQUIRED_COLUMNS]
     validate_dataframe(frame, require_target=True)
     return frame
 
