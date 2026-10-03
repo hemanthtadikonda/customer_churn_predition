@@ -16,9 +16,11 @@ Processed data is a derived product. It can be rebuilt from raw + code. Mixing t
 
 Git is for code and configuration. CSV/SQLite snapshots are large, often licensed for use rather than redistribution, and they change every extract. Committing them also risks leaking simulated "customer" files into pull requests as if they were production records.
 
-## Future DVC
+## DVC (training snapshot)
 
-DVC (or a lakehouse catalog) will version `data/raw` and `data/processed` by checksum and remote pointer. This phase only leaves `.gitignore` hooks and metadata sidecars (`*.metadata.json`) so DVC can be added later without redesigning folders.
+The file used to train the XGBoost model is **`data/raw/telco_churn.csv`**. Git stores `data/raw/telco_churn.csv.dvc` (md5 + size). S3 stores the CSV bytes (`dvc push` / `dvc pull`). Acquisition folders under `data/raw/api/` and `data/raw/database/` stay local and gitignored; they are not the training contract.
+
+See `docs/dvc_setup.md`.
 
 ## Future object storage
 

@@ -40,11 +40,15 @@
 
 **Why:** Those steps must stay with the training/serving code to avoid train-serve skew.
 
-## DVC / cloud / training not expanded here
+## DVC versions the training snapshot, not the whole lake
 
-**Decision:** Do not add new DVC remotes, Docker, Kubernetes, or training jobs in this phase.
+**Decision:** Track only `data/raw/telco_churn.csv` with DVC (`dvc add` + S3). Keep `dvc.yaml` as the **train** stage. Do not DVC-add `data/raw/api/` or `data/raw/database/`.
 
-**Why:** The request is a data foundation. Some of those files already exist from an earlier portfolio step; they are preserved, not extended.
+**Why:** Training reads one file (`configs/config.yaml` → `data.raw_path`). Versioning that snapshot answers "which bytes trained this model?" API/DB extracts are a separate data-foundation path and are not yet the training contract.
+
+**Why not a DVC `collect` stage that writes the same CSV:** A pipeline `outs` path cannot also have a `.dvc` sidecar. Generate data with Python, freeze it with `dvc add`, train with `dvc repro`.
+
+**Remote:** Not stored in Git. Each environment runs `dvc remote add -d --local churnstore s3://YOUR-BUCKET/YOUR-PREFIX`. Credentials stay on the machine (IAM role or `aws configure`).
 
 ---
 
@@ -55,7 +59,7 @@ Inspected before adding this foundation. Nothing was deleted.
 | Existing item | Conflict | Resolution |
 | --- | --- | --- |
 | `ml/data/generate.py` writes **synthetic IBM-schema rows into `data/raw/telco_churn.csv`** | Violates "raw is immutable public extract" and "do not pretend synthetic data is real" | Left in place so DVC `collect` and current training tests still run. New generators write to `data/synthetic/` and labeled raw subfolders. Comment added on the old module. |
-| `dvc.yaml` collect stage | Treats generated CSV as the official raw dataset | Unchanged this phase. Future work should point DVC at catalog-acquired or prepared data. |
+| `dvc.yaml` collect stage | Same path cannot be pipeline `outs` and a `.dvc` sidecar | Collect stage removed. Training CSV is frozen with `telco_churn.csv.dvc`; `dvc.yaml` trains only. |
 | `ml/data/schema.py` | IBM Yes/No schema vs synthetic 0/1 operational schema | Both documented. Validation supports named schemas. Do not silently union them. |
 | `data/raw/.gitkeep` + `data/processed/.gitkeep` | Layout was incomplete (no interim/synthetic/sources) | Extended folders; kept existing gitkeeps. |
 | `README.md` Python 3.11 + ML quickstart | This phase asks for 3.12+ and data-first docs | CI bumped to 3.12. Root README documents both the new data foundation and the existing ML path. |

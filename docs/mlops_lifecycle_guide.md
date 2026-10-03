@@ -422,14 +422,15 @@ Docker is not installed on the host yet. That install is part of session C, not 
 
 ### Session D — Data versioning with DVC
 
-Why it exists: Git versions code. DVC versions large files and records which data produced which metrics. `dvc.yaml` already describes two stages:
+Why it exists: Git versions code. DVC versions large files and records which data produced which metrics.
 
 ```text
-collect:  python -m ml.data.generate   →  data/raw/telco_churn.csv
-train:    python -m ml.training.train  →  joblib + metrics
+python -m ml.data.generate          →  data/raw/telco_churn.csv
+dvc add data/raw/telco_churn.csv    →  pointer in Git, bytes in S3 (dvc push)
+dvc repro                           →  train stage in dvc.yaml
 ```
 
-`dvc repro` would rerun a stage only when its code, params, or inputs change. That is the ML version of “don’t rebuild if the inputs are cached.” Wiring a remote (S3) comes after a local `dvc repro` makes sense to you.
+Do not `dvc add` a path that is also a pipeline `outs` entry. Full runbook: `docs/dvc_setup.md`.
 
 ### After that
 

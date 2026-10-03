@@ -1,16 +1,7 @@
+# Training pipeline. The training CSV is frozen with `dvc add`
+# (see data/raw/telco_churn.csv.dvc), not regenerated as a DVC stage.
+# Do not add a collect `outs` of the same path — that conflicts with `dvc add`.
 stages:
-  collect:
-    cmd: python -m ml.data.generate
-    deps:
-      - ml/data/generate.py
-      - ml/data/schema.py
-      - configs/config.yaml
-    params:
-      - data.n_samples
-      - data.random_state
-    outs:
-      - data/raw/telco_churn.csv
-
   train:
     cmd: python -m ml.training.train
     deps:

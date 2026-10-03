@@ -98,7 +98,7 @@ configs/                # training and serving config
 data/raw/               # collected dataset (generated locally)
 artifacts/              # model, metrics, feature importance
 mlops/                  # Docker image and compose file
-dvc.yaml                # reproducible collect -> train pipeline
+dvc.yaml                # train stage; training CSV is tracked by data/raw/telco_churn.csv.dvc
 .github/workflows/      # CI tests
 ```
 
@@ -172,12 +172,27 @@ Train first so `artifacts/models/churn_pipeline.joblib` exists, then:
 docker compose -f mlops/docker-compose.yml up --build
 ```
 
+## DVC and S3
+
+Training uses **`data/raw/telco_churn.csv`**. Git stores the DVC pointer (`data/raw/telco_churn.csv.dvc`). S3 stores the CSV after you add a remote on the machine and run `dvc push`. `dvc.yaml` runs **train** only.
+
+Full runbook: **[docs/dvc_setup.md](docs/dvc_setup.md)**.
+
+```bash
+pip install -r requirements.txt
+python3 -m ml.data.generate
+dvc add data/raw/telco_churn.csv
+dvc remote add -d --local churnstore s3://YOUR-BUCKET/YOUR-PREFIX
+dvc push
+dvc repro
+```
+
 ## Next MLOps practice steps
 
 The data foundation in `data_acquisition/`, `data_validation/`, and `data_preparation/` is the next wiring target for DVC and training.
 
-- Point `dvc.yaml` collect at catalog-approved raw extracts instead of `ml.data.generate`.
-- Add DVC remotes (`dvc add data/raw`) once a bucket exists.
+- Point training at catalog-approved raw extracts instead of `ml.data.generate`.
+- `dvc push` model artifacts after `dvc repro` (see `docs/dvc_setup.md`).
 - Tune the serving threshold for recall vs precision on a cost matrix.
 - Add SHAP plots from the frozen pipeline for stakeholder explainability.
 - Register the MLflow model and promote Staging → Production.
