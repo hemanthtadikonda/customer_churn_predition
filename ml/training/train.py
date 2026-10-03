@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -20,18 +21,39 @@ from ml.features.engineer import build_feature_pipeline
 from ml.training.evaluate import compute_metrics, quality_gate, save_json
 
 
-def _maybe_start_mlflow(config: dict):
-    # Recent MLflow releases refuse the local directory backend unless this
-    # is set. The project tracks runs under mlruns/, so keep that store.
+def _sha256_file(path: Path) -> str | None:
+    if not path.exists() or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _resolve_mlflow_tracking_uri(config: dict) -> str:
+    """Prefer MLFLOW_TRACKING_URI (tracking server); else configs/config.yaml.
+
+    HTTP(S) URIs talk to `mlflow server`. Anything else is a local folder
+    (default `mlruns/`) and needs MLFLOW_ALLOW_FILE_STORE on recent MLflow.
+    """
+    configured = str(config.get("mlflow", {}).get("tracking_uri", "mlruns")).strip()
+    uri = os.environ.get("MLFLOW_TRACKING_URI", "").strip() or configured
+    if uri.startswith(("http://", "https://")):
+        return uri
+    tracking_dir = resolve_path(uri)
+    tracking_dir.mkdir(parents=True, exist_ok=True)
     os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
+    return tracking_dir.as_uri()
+
+
+def _maybe_start_mlflow(config: dict):
     try:
         import mlflow
     except ImportError:
         return None
 
-    tracking_dir = resolve_path(config["mlflow"]["tracking_uri"])
-    tracking_dir.mkdir(parents=True, exist_ok=True)
-    mlflow.set_tracking_uri(tracking_dir.as_uri())
+    mlflow.set_tracking_uri(_resolve_mlflow_tracking_uri(config))
     mlflow.set_experiment(config["mlflow"]["experiment_name"])
     return mlflow
 
@@ -115,8 +137,22 @@ def run_training(config_path: str | None = None) -> dict:
 
     mlflow = _maybe_start_mlflow(config)
     if mlflow is not None:
+        dataset_hash = _sha256_file(raw_path)
         with mlflow.start_run(run_name="xgboost_churn"):
+            mlflow.set_tags(
+                {
+                    "algorithm": "XGBoost",
+                    "project": config["project"]["name"],
+                    "dataset_path": str(raw_path.as_posix()),
+                }
+            )
+            if dataset_hash:
+                mlflow.set_tag("dataset_sha256", dataset_hash)
             mlflow.log_params(config["model"]["params"])
+            mlflow.log_param("threshold", threshold)
+            mlflow.log_param("n_train", int(len(x_train)))
+            mlflow.log_param("n_val", int(len(x_val)))
+            mlflow.log_param("n_test", int(len(x_test)))
             mlflow.log_metrics(
                 {
                     "val_roc_auc": val_metrics["roc_auc"],
@@ -131,6 +167,8 @@ def run_training(config_path: str | None = None) -> dict:
             mlflow.log_artifact(str(metrics_path))
             mlflow.log_artifact(str(importance_path))
             try:
+                mlflow.sklearn.log_model(pipeline, name="sklearn_pipeline")
+            except TypeError:
                 mlflow.sklearn.log_model(pipeline, artifact_path="sklearn_pipeline")
             except Exception as exc:
                 print(f"MLflow model logging skipped: {exc}")

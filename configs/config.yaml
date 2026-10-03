@@ -35,6 +35,8 @@ model:
     random_state: 42
 
 mlflow:
+  # Local folder when MLFLOW_TRACKING_URI is unset. For the VM tracking
+  # server, export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 instead.
   tracking_uri: mlruns
   experiment_name: customer-churn-xgboost
 

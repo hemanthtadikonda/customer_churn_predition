@@ -157,12 +157,25 @@ Response includes `churn_probability`, a 0/1 `churn_prediction`, and a `risk_ban
 | ML engineer | `ml/training`, `ml/serving`, `api` | Train XGBoost, freeze a joblib pipeline, serve predictions |
 | MLOps | `dvc.yaml`, `mlruns/`, `mlops/`, CI | Reproducible stages, MLflow tracking, Docker, quality gate (`roc_auc >= 0.75`) |
 
-Training logs params and metrics to MLflow under `mlruns/` and writes:
+Training logs params and metrics to MLflow (local `mlruns/` or a tracking server via `MLFLOW_TRACKING_URI`) and writes:
 
 - `artifacts/models/churn_pipeline.joblib`
 - `artifacts/models/metadata.json`
 - `artifacts/metrics/metrics.json`
 - `artifacts/metrics/feature_importance.json`
+
+## Experiment tracking (MLflow)
+
+DVC versions the training CSV. MLflow compares **runs** (params vs `test_roc_auc`, `test_recall`, dataset hash).
+
+Install the **server in a separate directory** (`~/mlflow-setup`), then from this repo:
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+python3 -m ml.training.train
+```
+
+Full install, why tracking exists, code behavior, and UI compare steps: **[docs/mlflow_tracking.md](docs/mlflow_tracking.md)**.
 
 ## Docker
 
@@ -193,6 +206,7 @@ The data foundation in `data_acquisition/`, `data_validation/`, and `data_prepar
 
 - Point training at catalog-approved raw extracts instead of `ml.data.generate`.
 - `dvc push` model artifacts after `dvc repro` (see `docs/dvc_setup.md`).
+- Run the MLflow tracking server and compare runs (see `docs/mlflow_tracking.md`).
 - Tune the serving threshold for recall vs precision on a cost matrix.
 - Add SHAP plots from the frozen pipeline for stakeholder explainability.
 - Register the MLflow model and promote Staging → Production.
