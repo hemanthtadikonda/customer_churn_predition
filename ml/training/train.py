@@ -20,6 +20,13 @@ from ml.data.ingest import load_raw, split_features_target, train_val_test_split
 from ml.features.engineer import build_feature_pipeline
 from ml.training.evaluate import compute_metrics, quality_gate, save_json
 
+# MLflow 3+ defaults to skops; custom steps and XGBoost need explicit trust.
+_MLFLOW_SKOPS_TRUSTED_TYPES = [
+    "ml.features.engineer.ChurnFeatureEngineer",
+    "xgboost.core.Booster",
+    "xgboost.sklearn.XGBClassifier",
+]
+
 
 def _sha256_file(path: Path) -> str | None:
     if not path.exists() or not path.is_file():
@@ -149,6 +156,7 @@ def run_training(config_path: str | None = None) -> dict:
             if dataset_hash:
                 mlflow.set_tag("dataset_sha256", dataset_hash)
             mlflow.log_params(config["model"]["params"])
+            mlflow.log_param("model_family", "xgboost")
             mlflow.log_param("threshold", threshold)
             mlflow.log_param("n_train", int(len(x_train)))
             mlflow.log_param("n_val", int(len(x_val)))
@@ -167,9 +175,17 @@ def run_training(config_path: str | None = None) -> dict:
             mlflow.log_artifact(str(metrics_path))
             mlflow.log_artifact(str(importance_path))
             try:
-                mlflow.sklearn.log_model(pipeline, name="sklearn_pipeline")
+                mlflow.sklearn.log_model(
+                    pipeline,
+                    name="sklearn_pipeline",
+                    skops_trusted_types=_MLFLOW_SKOPS_TRUSTED_TYPES,
+                )
             except TypeError:
-                mlflow.sklearn.log_model(pipeline, artifact_path="sklearn_pipeline")
+                mlflow.sklearn.log_model(
+                    pipeline,
+                    artifact_path="sklearn_pipeline",
+                    skops_trusted_types=_MLFLOW_SKOPS_TRUSTED_TYPES,
+                )
             except Exception as exc:
                 print(f"MLflow model logging skipped: {exc}")
 

@@ -254,6 +254,8 @@ Each train creates a run named `xgboost_churn`.
 | `Unable to connect` / connection refused | Server not running; `ss` / `curl` on 5000 |
 | `Invalid Host header` | Restart server with `--allowed-hosts '*'` |
 | UI empty after train | Wrong experiment name, or trained against file store |
+| Runs search `INTERNAL_ERROR` | Filter references params/metrics this project does not log (e.g. `rmse`, `params.model`). Clear the filter or use `metrics.test_roc_auc > 0.75` and `params.model_family = "xgboost"` |
+| `MLflow model logging skipped` / untrusted types | Retrain on code with `skops_trusted_types` in `ml/training/train.py`, or ignore if you only need metrics (joblib on disk is unchanged) |
 | `Unable to locate credentials` | That is DVC/S3, not MLflow |
 | Quality gate fails | Tracking still works; fix model/metrics first |
 

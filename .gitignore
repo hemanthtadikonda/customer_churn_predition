@@ -17,6 +17,7 @@ htmlcov/
 
 # Data and models (do not commit datasets; DVC pointers are allowed)
 data/raw/**
+!data/raw/
 !data/raw/.gitkeep
 !data/raw/.gitignore
 !data/raw/*.dvc
