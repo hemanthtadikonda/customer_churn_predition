@@ -177,6 +177,18 @@ python3 -m ml.training.train
 
 Full install, why tracking exists, code behavior, and UI compare steps: **[docs/mlflow_tracking.md](docs/mlflow_tracking.md)**.
 
+## Model registry and artifact storage (MLflow)
+
+After the tracking server is running, training **registers** a new model version (alias **Staging** by default) and logs the sklearn pipeline as a run artifact. Promote **Production** in the UI or CLI, then serve with:
+
+```bash
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+export MLFLOW_MODEL_URI=models:/customer-churn-xgboost@Production
+uvicorn api.main:app --reload
+```
+
+Runbook (S3 artifact root, promotion workflow, DVC alignment): **[docs/mlflow_model_registry.md](docs/mlflow_model_registry.md)**.
+
 ## Docker
 
 Train first so `artifacts/models/churn_pipeline.joblib` exists, then:
@@ -209,5 +221,5 @@ The data foundation in `data_acquisition/`, `data_validation/`, and `data_prepar
 - Run the MLflow tracking server and compare runs (see `docs/mlflow_tracking.md`).
 - Tune the serving threshold for recall vs precision on a cost matrix.
 - Add SHAP plots from the frozen pipeline for stakeholder explainability.
-- Register the MLflow model and promote Staging → Production.
+- Register the MLflow model and promote Staging → Production ([docs/mlflow_model_registry.md](docs/mlflow_model_registry.md)).
 - Add a GitHub Actions job that retrains and fails the build if the quality gate drops.

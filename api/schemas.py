@@ -82,3 +82,5 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     model_name: str | None = None
     algorithm: str | None = None
+    model_source: str | None = None
+    model_uri: str | None = None

@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -18,14 +17,14 @@ from ml.config import load_config, resolve_path
 from ml.data.generate import generate_churn_dataset, save_dataset
 from ml.data.ingest import load_raw, split_features_target, train_val_test_split
 from ml.features.engineer import build_feature_pipeline
+from ml.mlflow_utils import (
+    configure_mlflow,
+    log_sklearn_pipeline,
+    registry_settings,
+    register_run_model,
+    resolve_tracking_uri,
+)
 from ml.training.evaluate import compute_metrics, quality_gate, save_json
-
-# MLflow 3+ defaults to skops; custom steps and XGBoost need explicit trust.
-_MLFLOW_SKOPS_TRUSTED_TYPES = [
-    "ml.features.engineer.ChurnFeatureEngineer",
-    "xgboost.core.Booster",
-    "xgboost.sklearn.XGBClassifier",
-]
 
 
 def _sha256_file(path: Path) -> str | None:
@@ -36,33 +35,6 @@ def _sha256_file(path: Path) -> str | None:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
-
-
-def _resolve_mlflow_tracking_uri(config: dict) -> str:
-    """Prefer MLFLOW_TRACKING_URI (tracking server); else configs/config.yaml.
-
-    HTTP(S) URIs talk to `mlflow server`. Anything else is a local folder
-    (default `mlruns/`) and needs MLFLOW_ALLOW_FILE_STORE on recent MLflow.
-    """
-    configured = str(config.get("mlflow", {}).get("tracking_uri", "mlruns")).strip()
-    uri = os.environ.get("MLFLOW_TRACKING_URI", "").strip() or configured
-    if uri.startswith(("http://", "https://")):
-        return uri
-    tracking_dir = resolve_path(uri)
-    tracking_dir.mkdir(parents=True, exist_ok=True)
-    os.environ.setdefault("MLFLOW_ALLOW_FILE_STORE", "true")
-    return tracking_dir.as_uri()
-
-
-def _maybe_start_mlflow(config: dict):
-    try:
-        import mlflow
-    except ImportError:
-        return None
-
-    mlflow.set_tracking_uri(_resolve_mlflow_tracking_uri(config))
-    mlflow.set_experiment(config["mlflow"]["experiment_name"])
-    return mlflow
 
 
 def train_pipeline(
@@ -142,52 +114,64 @@ def run_training(config_path: str | None = None) -> dict:
     save_json({"validation": val_metrics, "test": test_metrics}, metrics_path)
     save_json(importance, importance_path)
 
-    mlflow = _maybe_start_mlflow(config)
+    tracking_uri = resolve_tracking_uri(config)
+    registry_cfg = registry_settings(config)
+    mlflow = configure_mlflow(config)
+    registry_result = None
     if mlflow is not None:
-        dataset_hash = _sha256_file(raw_path)
-        with mlflow.start_run(run_name="xgboost_churn"):
-            mlflow.set_tags(
-                {
-                    "algorithm": "XGBoost",
-                    "project": config["project"]["name"],
-                    "dataset_path": str(raw_path.as_posix()),
-                }
-            )
-            if dataset_hash:
-                mlflow.set_tag("dataset_sha256", dataset_hash)
-            mlflow.log_params(config["model"]["params"])
-            mlflow.log_param("model_family", "xgboost")
-            mlflow.log_param("threshold", threshold)
-            mlflow.log_param("n_train", int(len(x_train)))
-            mlflow.log_param("n_val", int(len(x_val)))
-            mlflow.log_param("n_test", int(len(x_test)))
-            mlflow.log_metrics(
-                {
-                    "val_roc_auc": val_metrics["roc_auc"],
-                    "val_pr_auc": val_metrics["pr_auc"],
-                    "val_f1": val_metrics["f1"],
-                    "test_roc_auc": test_metrics["roc_auc"],
-                    "test_pr_auc": test_metrics["pr_auc"],
-                    "test_f1": test_metrics["f1"],
-                    "test_recall": test_metrics["recall"],
-                }
-            )
-            mlflow.log_artifact(str(metrics_path))
-            mlflow.log_artifact(str(importance_path))
-            try:
-                mlflow.sklearn.log_model(
-                    pipeline,
-                    name="sklearn_pipeline",
-                    skops_trusted_types=_MLFLOW_SKOPS_TRUSTED_TYPES,
+        try:
+            dataset_hash = _sha256_file(raw_path)
+            with mlflow.start_run(run_name="xgboost_churn") as active_run:
+                mlflow.set_tags(
+                    {
+                        "algorithm": "XGBoost",
+                        "project": config["project"]["name"],
+                        "dataset_path": str(raw_path.as_posix()),
+                    }
                 )
-            except TypeError:
-                mlflow.sklearn.log_model(
-                    pipeline,
-                    artifact_path="sklearn_pipeline",
-                    skops_trusted_types=_MLFLOW_SKOPS_TRUSTED_TYPES,
+                if dataset_hash:
+                    mlflow.set_tag("dataset_sha256", dataset_hash)
+                mlflow.log_params(config["model"]["params"])
+                mlflow.log_param("model_family", "xgboost")
+                mlflow.log_param("threshold", threshold)
+                mlflow.log_param("n_train", int(len(x_train)))
+                mlflow.log_param("n_val", int(len(x_val)))
+                mlflow.log_param("n_test", int(len(x_test)))
+                mlflow.log_metrics(
+                    {
+                        "val_roc_auc": val_metrics["roc_auc"],
+                        "val_pr_auc": val_metrics["pr_auc"],
+                        "val_f1": val_metrics["f1"],
+                        "test_roc_auc": test_metrics["roc_auc"],
+                        "test_pr_auc": test_metrics["pr_auc"],
+                        "test_f1": test_metrics["f1"],
+                        "test_recall": test_metrics["recall"],
+                    }
                 )
-            except Exception as exc:
-                print(f"MLflow model logging skipped: {exc}")
+                mlflow.log_artifact(str(metrics_path))
+                mlflow.log_artifact(str(importance_path))
+                try:
+                    log_sklearn_pipeline(mlflow, pipeline, registry_cfg["logged_model_name"])
+                except Exception as exc:
+                    print(f"MLflow model logging skipped: {exc}")
+                else:
+                    try:
+                        registry_result = register_run_model(
+                            config, active_run.info.run_id, tracking_uri
+                        )
+                    except Exception as exc:
+                        print(f"MLflow model registry skipped: {exc}")
+        except Exception as exc:
+            print(f"MLflow tracking skipped: {exc}")
+
+    if registry_result is not None:
+        metadata["mlflow_run_id"] = registry_result.run_id
+        metadata["mlflow_registered_model"] = registry_result.registered_model_name
+        metadata["mlflow_model_version"] = registry_result.version
+        metadata["mlflow_model_uri"] = registry_result.model_uri
+        if registry_result.alias:
+            metadata["mlflow_model_alias"] = registry_result.alias
+        save_json(metadata, metadata_path)
 
     print(json.dumps({"validation": val_metrics, "test": test_metrics}, indent=2))
     print(f"Saved pipeline to {artifact_path}")

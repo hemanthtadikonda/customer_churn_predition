@@ -39,6 +39,16 @@ mlflow:
   # server, export MLFLOW_TRACKING_URI=http://127.0.0.1:5000 instead.
   tracking_uri: mlruns
   experiment_name: customer-churn-xgboost
+  # Serving: unset MLFLOW_MODEL_URI to load artifacts/models/churn_pipeline.joblib.
+  # After registry promotion, point API at Production, e.g.:
+  # model_uri: models:/customer-churn-xgboost@Production
+  model_uri: null
+  registry:
+    enabled: true
+    registered_model_name: customer-churn-xgboost
+    logged_model_name: sklearn_pipeline
+    # Assign alias after quality gate passes. Production is manual in the UI (best practice).
+    promote_alias_on_pass: Staging
 
 api:
   host: 0.0.0.0

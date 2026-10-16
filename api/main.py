@@ -56,6 +56,8 @@ def health() -> HealthResponse:
         model_loaded=loaded,
         model_name=metadata.get("model_name"),
         algorithm=metadata.get("algorithm"),
+        model_source=predictor.model_source if predictor else None,
+        model_uri=predictor.model_uri if predictor else None,
     )
 
 

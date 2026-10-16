@@ -152,13 +152,15 @@ Confirm **demo-experiment** in the UI, then use the churn experiment from traini
 
 ## 4. Code changes in this repository (client)
 
-Training already logged params/metrics to **local** `mlruns/`. It now:
+Training (`ml/training/train.py` + `ml/mlflow_utils.py`):
 
-1. Reads **`MLFLOW_TRACKING_URI`** first (`ml/training/train.py`).
-2. If the URI is `http://` or `https://`, it talks to your server.
-3. If unset, it still uses `configs/config.yaml` → `mlflow.tracking_uri` (`mlruns/`).
-4. Logs **tags** `dataset_path`, `dataset_sha256` so a run can be tied to the DVC snapshot.
-5. Logs **threshold**, split sizes, and validation/test metrics for comparison.
+1. Reads **`MLFLOW_TRACKING_URI`** first, else `configs/config.yaml` → `mlflow.tracking_uri`.
+2. HTTP(S) → tracking server; otherwise local `mlruns/` (file store).
+3. Logs tags `dataset_path`, `dataset_sha256`, params, metrics, and artifacts.
+4. Logs the sklearn pipeline as **`sklearn_pipeline`**.
+5. On a tracking **server**, after the quality gate: **registers** the model and sets alias **Staging** (configurable). See **[mlflow_model_registry.md](mlflow_model_registry.md)**.
+
+Serving (`ml/serving/predictor.py`): optional **`MLFLOW_MODEL_URI`** to load `models:/...@Production` instead of `artifacts/models/churn_pipeline.joblib`.
 
 No change is required inside `~/mlflow-setup`. Do not copy this repo into that folder.
 
@@ -230,7 +232,7 @@ Each train creates a run named `xgboost_churn`.
 1. Freeze data with DVC; do not silently regenerate CSV between comparison runs.
 2. Change **one** thing per run (or log a tag `hypothesis=deeper_trees`).
 3. Promote a model using **test** metrics plus the quality gate (`roc_auc >= 0.75`), not training loss.
-4. Keep `artifacts/models/churn_pipeline.joblib` as the serving copy; MLflow is the **ledger**, the joblib is what the API loads today.
+4. Default API still uses `artifacts/models/churn_pipeline.joblib`; for registry-based deploy set `MLFLOW_MODEL_URI` (see [mlflow_model_registry.md](mlflow_model_registry.md)).
 
 ---
 
@@ -263,7 +265,8 @@ Each train creates a run named `xgboost_churn`.
 
 ## Related
 
+- [mlflow_model_registry.md](mlflow_model_registry.md) — artifacts, register, Staging/Production, serving URI
 - `docs/dvc_setup.md` — dataset versioning
-- `configs/config.yaml` — `mlflow.experiment_name`
-- `ml/training/train.py` — client logging
+- `configs/config.yaml` — `mlflow.experiment_name`, `mlflow.registry`
+- `ml/mlflow_utils.py` — shared client helpers
 - [MLflow tracking](https://mlflow.org/docs/latest/tracking.html)
