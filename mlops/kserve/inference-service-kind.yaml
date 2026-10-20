@@ -1,12 +1,12 @@
 # kind + MLflow on the same Linux VM (outside the cluster).
-# 1. Start MLflow bound to all interfaces: mlflow server --host 0.0.0.0 --port 5000 ...
-# 2. Set MLFLOW_HOST_IP to the IP pods can use to reach the host (NOT 127.0.0.1).
-#    Common values on kind/Linux:
-#      ip -4 route show default | awk '{print $3}'   # docker bridge gateway → host
-#      or the VM private IP (e.g. 172.31.x.x) if MLflow listens on 0.0.0.0
+# 1. Start MLflow on 0.0.0.0:5000 (full command in docs/kserve_serving.md Step 2).
+# 2. Set MLFLOW_HOST_IP — IP pods use to reach MLflow (NOT 127.0.0.1). Prefer kind node gateway:
+#      docker inspect mlops-control-plane --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}'
+#    Often 172.18.0.1 on kind; avoid guessing 172.31.32.1 unless a curl test from a pod succeeds.
 # 3. kind load docker-image customer-churn-kserve:latest
 # 4. export MLFLOW_HOST_IP=172.17.0.1   # example only — use your value
-# 5. envsubst < mlops/kserve/inference-service-kind.yaml | kubectl apply -f -
+# 5. If MLflow artifacts are on S3: kubectl apply -f mlops/kserve/aws-credentials-secret.yaml (from .example)
+# 6. kubectl apply -f mlops/kserve/inference-service-kind.yaml
 apiVersion: serving.kserve.io/v1beta1
 kind: InferenceService
 metadata:
@@ -17,6 +17,9 @@ metadata:
     serving.kserve.io/deploymentMode: Standard
 spec:
   predictor:
+    # Pod uses the host network so http://127.0.0.1:5000 reaches MLflow on the VM.
+    hostNetwork: true
+    dnsPolicy: ClusterFirstWithHostNet
     minReplicas: 1
     maxReplicas: 1
     containers:
@@ -28,25 +31,37 @@ spec:
             protocol: TCP
         env:
           - name: MLFLOW_TRACKING_URI
-            value: "http://${MLFLOW_HOST_IP}:5000"
+            value: "http://127.0.0.1:5000"
           - name: MLFLOW_MODEL_URI
             value: "models:/customer-churn-xgboost@Staging"
+          # Lab fallback (no S3): comment envFrom below, uncomment this, rebuild image after train.
+          # - name: KSERVE_USE_LOCAL_JOBLIB
+          #   value: "true"
+        # Required when MLflow --default-artifact-root is s3://... (same IAM user as training).
+        envFrom:
+          - secretRef:
+              name: mlflow-aws-credentials
         resources:
           requests:
             cpu: "250m"
-            memory: "512Mi"
+            memory: "768Mi"
           limits:
             cpu: "1"
-            memory: "1Gi"
+            memory: "2Gi"
+        startupProbe:
+          httpGet:
+            path: /v1/models/customer-churn-xgboost/ready
+            port: 8080
+          periodSeconds: 5
+          failureThreshold: 36
         readinessProbe:
           httpGet:
             path: /v1/models/customer-churn-xgboost/ready
             port: 8080
-          initialDelaySeconds: 45
           periodSeconds: 5
         livenessProbe:
           httpGet:
             path: /v1/models/customer-churn-xgboost/ready
             port: 8080
-          initialDelaySeconds: 60
           periodSeconds: 10
+          failureThreshold: 3

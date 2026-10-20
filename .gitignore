@@ -39,6 +39,7 @@ artifacts/metrics/*
 !artifacts/metrics/.gitkeep
 
 # MLOps local state
+mlops/kserve/aws-credentials-secret.yaml
 mlruns/
 .mlflow/
 .dvc/tmp/

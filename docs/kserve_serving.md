@@ -1,8 +1,101 @@
 # KServe integration — serve the MLflow Staging model
 
-End-to-end guide for this repo: **kind** cluster on a Linux VM, **KServe 0.20 (Standard mode)**, **MLflow** on the host, and the custom image in `mlops/Dockerfile.kserve`.
+End-to-end guide for this repo: **kind** on Ubuntu EC2, **KServe 0.20 (Standard mode)**, **MLflow** on the host, custom image `mlops/Dockerfile.kserve`.
 
-The predictor loads the same sklearn pipeline as FastAPI (`ml/serving/predictor.py`) via **`MLFLOW_MODEL_URI`** (e.g. `models:/customer-churn-xgboost@Staging`).
+The predictor uses the same pipeline as FastAPI (`ml/serving/predictor.py`) via **`MLFLOW_MODEL_URI`** (e.g. `models:/customer-churn-xgboost@Staging`).
+
+---
+
+## Recommended approach (start here)
+
+You already use **MLflow registry** and (typically) **S3** for artifacts (DVC/training on EC2). The best lab setup that matches production patterns is **Path A**. Use **Path B** only for a quick demo without wiring AWS into Kubernetes.
+
+| Path | When to use | Registry `@Staging` | S3 creds in pod | Manifest |
+| --- | --- | --- | --- | --- |
+| **A — Recommended** | Your EC2 + kind + MLflow + `s3://` artifacts | Yes | Yes (Kubernetes Secret) | `inference-service-kind.yaml` |
+| **B — Lab shortcut** | Fastest demo; model file baked in Docker image | No (local joblib) | No | `inference-service-kind.yaml` + `KSERVE_USE_LOCAL_JOBLIB` |
+| **C — Disk artifacts only** | MLflow `--default-artifact-root ./mlartifacts` (no S3) | Yes | No | `inference-service-kind.yaml` (drop `envFrom`) |
+
+**Why Path A is best for you:** Training and registry stay the source of truth; promoting **Staging → Production** only changes `MLFLOW_MODEL_URI`. The pod needs the **same AWS identity** as the VM because `load_model(models:/...)` downloads from **S3**, not just the MLflow HTTP API (this caused your `NoCredentialsError`).
+
+**Documentation map**
+
+| Topic | Doc |
+| --- | --- |
+| Train, register, Staging alias | [mlflow_guide.md](mlflow_guide.md) |
+| Docker/kind/KServe install (Steps 0–1) | This file, below |
+| **Single checklist (Path A)** | [Quick runbook — Path A](#quick-runbook--path-a-registry--s3-on-ec2) |
+| FastAPI serving (no K8s) | [mlflow_guide.md](mlflow_guide.md) Part 2, `api/main.py` |
+
+### Architecture (Path A)
+
+```text
+  EC2 VM
+  ├── MLflow (:5000) ──metadata──► sqlite + registry aliases
+  ├── S3 bucket ◄──artifacts──► registered model versions
+  └── kind cluster "mlops"
+        └── Pod (hostNetwork)
+              ├── MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+              ├── MLFLOW_MODEL_URI=models:/customer-churn-xgboost@Staging
+              └── AWS_* from Secret mlflow-aws-credentials
+                    └── mlflow.sklearn.load_model → predict :8080
+```
+
+`hostNetwork: true` lets the pod use **`127.0.0.1:5000`** for MLflow on the same VM (simplest on kind).
+
+---
+
+## Quick runbook — Path A (registry + S3 on EC2)
+
+Run from a clean shell on the VM. Assumes Steps **0** and **1** are already done (kind `mlops`, KServe controller Running).
+
+```bash
+# 1) Repo up to date (stash local edits to inference-service.yaml if needed)
+cd ~/customer_churn_predition
+git stash push -m local-isvc mlops/kserve/inference-service.yaml 2>/dev/null || true
+git pull origin dev
+
+# 2) MLflow running on the host (~/mlflow-setup) — see Step 2 below for full command
+curl -s -o /dev/null -w "mlflow HTTP %{http_code}\n" http://127.0.0.1:5000/
+
+# 3) Model in registry with Staging alias
+export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
+python -m ml.training.train   # skip if Staging already exists
+
+# 4) AWS secret for the pod (same account/keys as training; file is gitignored)
+cp mlops/kserve/aws-credentials-secret.example.yaml mlops/kserve/aws-credentials-secret.yaml
+nano mlops/kserve/aws-credentials-secret.yaml   # fill AWS_ACCESS_KEY_ID, SECRET, REGION
+kubectl apply -f mlops/kserve/aws-credentials-secret.yaml
+
+# 5) Serving image
+docker build -f mlops/Dockerfile.kserve -t customer-churn-kserve:latest .
+kind load docker-image customer-churn-kserve:latest --name mlops
+
+# 6) Deploy (hostNetwork + registry + envFrom secret)
+kubectl delete inferenceservice customer-churn-xgboost --ignore-not-found
+kubectl apply -f mlops/kserve/inference-service-kind.yaml
+
+# 7) Wait and verify
+kubectl get pods -l serving.kserve.io/inferenceservice=customer-churn-xgboost -w
+kubectl logs -l serving.kserve.io/inferenceservice=customer-churn-xgboost -c kserve-container --tail=30
+# expect: "Model loaded successfully"
+
+# 8) Predict (port-forward)
+kubectl port-forward svc/customer-churn-xgboost-predictor-default 8080:80
+# second shell: curl POST ... see Step 5
+```
+
+**Promote to Production:** set alias in MLflow UI, then `kubectl set env deployment/... MLFLOW_MODEL_URI=models:/customer-churn-xgboost@Production` ([details](#promote-staging--production)).
+
+### Quick runbook — Path B (lab shortcut, no S3 in pod)
+
+1. `python -m ml.training.train` then `docker build ...` (joblib copied into image).
+2. Edit `mlops/kserve/inference-service-kind.yaml`: comment out entire `envFrom`, uncomment `KSERVE_USE_LOCAL_JOBLIB=true`, comment `MLFLOW_MODEL_URI`.
+3. `kind load` + `kubectl apply -f mlops/kserve/inference-service-kind.yaml`.
+
+Good for learning KServe; **not** a substitute for Path A when you care about registry promotion.
+
+---
 
 ## What lives in the repo
 
@@ -12,25 +105,9 @@ The predictor loads the same sklearn pipeline as FastAPI (`ml/serving/predictor.
 | `ml/serving/kserve_handlers.py` | V1 `instances` / V2 tensor request parsing |
 | `mlops/Dockerfile.kserve` | Serving image (port **8080**) |
 | `mlops/requirements-kserve.txt` | `kserve` Python package for the image |
-| `mlops/kserve/inference-service.yaml` | Default `InferenceService` (edit MLflow URI) |
-| `mlops/kserve/inference-service-kind.yaml` | kind + MLflow-on-host overlay (`envsubst`) |
-
-## Architecture
-
-```text
-  kind cluster (e.g. name: mlops)
-       |
-       v
-  InferenceService customer-churn-xgboost (Standard mode)
-       |  env: MLFLOW_TRACKING_URI, MLFLOW_MODEL_URI
-       v
-  Pod: customer-churn-kserve:latest
-       |  mlflow.sklearn.load_model(registry)
-       v
-  MLflow on VM (~/mlflow-setup) + artifacts (disk or S3)
-```
-
-Pods must reach MLflow at a **host-reachable** URL. `http://127.0.0.1:5000` inside the pod is wrong — that is the pod, not the VM.
+| `mlops/kserve/inference-service.yaml` | Generic `InferenceService` (custom MLflow URI) |
+| `mlops/kserve/inference-service-kind.yaml` | **Recommended** EC2/kind manifest (`hostNetwork`, AWS secret) |
+| `mlops/kserve/aws-credentials-secret.example.yaml` | Template → `aws-credentials-secret.yaml` (gitignored) |
 
 ## Prerequisites (after Step 0)
 
@@ -196,6 +273,27 @@ export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
 python -m ml.training.train
 ```
 
+### S3 artifacts and `NoCredentialsError` in the serving pod
+
+If the MLflow server uses **`--default-artifact-root s3://...`**, `mlflow.sklearn.load_model(models:/...)` downloads weights from **S3**, not only from the tracking API. The VM may have `~/.aws/credentials`, but the **Kubernetes pod does not**, which produces:
+
+`botocore.exceptions.NoCredentialsError: Unable to locate credentials`
+
+**Fix A — pass AWS creds into the pod (registry + S3):**
+
+```bash
+cp mlops/kserve/aws-credentials-secret.example.yaml mlops/kserve/aws-credentials-secret.yaml
+# edit keys (do not commit this file)
+kubectl apply -f mlops/kserve/aws-credentials-secret.yaml
+kubectl apply -f mlops/kserve/inference-service-kind.yaml
+```
+
+**Fix B — lab only, joblib in the image (no S3 in pod):**
+
+After `python -m ml.training.train`, rebuild the image, then in `inference-service-kind.yaml` remove/comment `envFrom`, set `KSERVE_USE_LOCAL_JOBLIB=true`, and comment out `MLFLOW_MODEL_URI`.
+
+**Fix C — local MLflow artifacts on disk** (`--default-artifact-root ./mlartifacts`): pods still pull via the tracking server; S3 creds are not needed unless the registered version points at `s3://`.
+
 ---
 
 ## Step 3 — Build and load the serving image
@@ -229,18 +327,18 @@ git pull origin dev
 test -f mlops/kserve/inference-service-kind.yaml && echo OK || echo "missing — git pull dev"
 ```
 
-**Option A — kind + MLflow on same VM (recommended for lab):**
+**Recommended — kind + MLflow on same VM (Path A):**
 
-Requires `gettext` package for `envsubst` (`sudo apt-get install -y gettext-base` if missing).
+Apply the AWS secret first (Step 2 S3 section), then:
 
 ```bash
 cd ~/customer_churn_predition
-export MLFLOW_HOST_IP="$(ip -4 route show default | awk '{print $3}')"
-echo "MLFLOW_HOST_IP=$MLFLOW_HOST_IP"
-envsubst < mlops/kserve/inference-service-kind.yaml | kubectl apply -f -
+kubectl apply -f mlops/kserve/inference-service-kind.yaml
 ```
 
-**Option B — edit** `mlops/kserve/inference-service.yaml` and set `MLFLOW_TRACKING_URI` to e.g. `http://<MLFLOW_HOST_IP>:5000` (not `127.0.0.1`), then:
+Uses `hostNetwork: true` and `MLFLOW_TRACKING_URI=http://127.0.0.1:5000`.
+
+**Alternative — edit** `mlops/kserve/inference-service.yaml` without `hostNetwork` and set `MLFLOW_TRACKING_URI` to the kind gateway (e.g. `http://172.18.0.1:5000`), then:
 
 ```bash
 kubectl apply -f mlops/kserve/inference-service.yaml
@@ -348,6 +446,45 @@ Then POST to `http://127.0.0.1:8080` with the same JSON as above.
 | `unexpected extra argument (...)` | Typed `...` literally | Use full `mlflow server` block in Step 2 |
 | `inference-service-kind.yaml: No such file` | Old clone | `git pull origin dev` |
 | `envsubst: command not found` | Package missing | `sudo apt-get install -y gettext-base` |
+| `CrashLoopBackOff`, exit **137**, `connection refused` on :8080 | Liveness killed container during slow MLflow load, or wrong MLflow IP | Rebuild image after `kserve_model.py` fix; use `startupProbe`; verify MLflow URL from a pod (below) |
+| `ModelLoadFailed` | Pod cannot reach MLflow or artifacts | Fix `MLFLOW_TRACKING_URI`; read `kubectl logs … -c kserve-container` |
+| `NoCredentialsError` | Artifacts on S3, no AWS env in pod | `mlflow-aws-credentials` Secret + `envFrom` (see Step 2) or `KSERVE_USE_LOCAL_JOBLIB` |
+
+**Find MLflow URL from inside the cluster** (do not guess `172.31.32.1`):
+
+```bash
+export MLFLOW_HOST_IP=$(docker inspect mlops-control-plane --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}')
+echo "MLFLOW_HOST_IP=$MLFLOW_HOST_IP"
+
+kubectl run mlflow-curl --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -v --connect-timeout 5 "http://${MLFLOW_HOST_IP}:5000/"
+```
+
+If that fails, use **`inference-service-kind.yaml` with `hostNetwork: true`** so the pod can use `http://127.0.0.1:5000` for MLflow on the same VM (simplest kind + host MLflow setup).
+
+If the pod exits with **code 1** within a few seconds, the Python process crashed during model load — always check:
+
+```bash
+kubectl logs -l serving.kserve.io/inferenceservice=customer-churn-xgboost -c kserve-container --tail=80
+kubectl logs -l serving.kserve.io/inferenceservice=customer-churn-xgboost -c kserve-container --previous
+```
+
+`connection refused` on :8080 is normal **until** `load()` finishes; KServe opens HTTP only after load. A quick exit 1 means load threw (MLflow down, wrong URI, missing Staging model, artifact/S3 error).
+
+Use whichever MLflow URL works, then re-apply and **rebuild/reload** the image after code changes:
+
+```bash
+docker build -f mlops/Dockerfile.kserve -t customer-churn-kserve:latest .
+kind load docker-image customer-churn-kserve:latest --name mlops
+kubectl rollout restart deployment -l serving.kserve.io/inferenceservice=customer-churn-xgboost
+kubectl logs -f -l serving.kserve.io/inferenceservice=customer-churn-xgboost -c kserve-container --tail=50
+```
+
+Delete stale ReplicaSets if two predictor pods fight each other after env changes:
+
+```bash
+kubectl get pods -l serving.kserve.io/inferenceservice=customer-churn-xgboost
+```
 
 **Tests** (V2 tensor parsing):
 

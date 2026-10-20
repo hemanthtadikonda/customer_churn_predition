@@ -34,19 +34,24 @@ spec:
         resources:
           requests:
             cpu: "250m"
-            memory: "512Mi"
+            memory: "768Mi"
           limits:
             cpu: "1"
-            memory: "1Gi"
+            memory: "2Gi"
+        startupProbe:
+          httpGet:
+            path: /v1/models/customer-churn-xgboost/ready
+            port: 8080
+          periodSeconds: 5
+          failureThreshold: 36
         readinessProbe:
           httpGet:
             path: /v1/models/customer-churn-xgboost/ready
             port: 8080
-          initialDelaySeconds: 45
           periodSeconds: 5
         livenessProbe:
           httpGet:
             path: /v1/models/customer-churn-xgboost/ready
             port: 8080
-          initialDelaySeconds: 60
           periodSeconds: 10
+          failureThreshold: 3
