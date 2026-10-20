@@ -407,6 +407,8 @@ Do not manually upload `churn_pipeline.joblib` to S3 if DVC or MLflow already ve
 | Runs search `INTERNAL_ERROR` | Filter uses unknown metrics/params | Clear filter; try `metrics.test_roc_auc > 0.75` |
 | Model logging skipped / untrusted types | Skops trust list | Use current `ml/training/train.py`; joblib on disk still updates |
 | Quality gate fails | Metrics below bar | Tracking still logged; fix model/data first |
+| `MLflow tracking skipped: No module named 'boto3'` | Server artifact root is `s3://…` or client uploads to S3 | `pip install boto3`; configure AWS creds, or use `--default-artifact-root ./mlartifacts` on the server |
+| Run appears in UI but no model / no registry | Artifact or `log_model` failed inside the run | Fix boto3/S3; retrain; check train stderr for `model logging skipped` |
 
 </details>
 
