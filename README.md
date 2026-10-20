@@ -175,7 +175,7 @@ export MLFLOW_TRACKING_URI=http://127.0.0.1:5000
 python3 -m ml.training.train
 ```
 
-Full install, why tracking exists, code behavior, and UI compare steps: **[docs/mlflow_tracking.md](docs/mlflow_tracking.md)**.
+Experiment tracking, registry, promotion, and serving (collapsible sections): **[docs/mlflow_guide.md](docs/mlflow_guide.md)**.
 
 ## Model registry and artifact storage (MLflow)
 
@@ -187,7 +187,7 @@ export MLFLOW_MODEL_URI=models:/customer-churn-xgboost@Production
 uvicorn api.main:app --reload
 ```
 
-Runbook (S3 artifact root, promotion workflow, DVC alignment): **[docs/mlflow_model_registry.md](docs/mlflow_model_registry.md)**.
+Registry and deploy details are in the same guide: **[docs/mlflow_guide.md](docs/mlflow_guide.md)** (Part 2).
 
 ## Docker
 
@@ -218,8 +218,8 @@ The data foundation in `data_acquisition/`, `data_validation/`, and `data_prepar
 
 - Point training at catalog-approved raw extracts instead of `ml.data.generate`.
 - `dvc push` model artifacts after `dvc repro` (see `docs/dvc_setup.md`).
-- Run the MLflow tracking server and compare runs (see `docs/mlflow_tracking.md`).
+- Run the MLflow tracking server and compare runs (see `docs/mlflow_guide.md`).
 - Tune the serving threshold for recall vs precision on a cost matrix.
 - Add SHAP plots from the frozen pipeline for stakeholder explainability.
-- Register the MLflow model and promote Staging → Production ([docs/mlflow_model_registry.md](docs/mlflow_model_registry.md)).
+- Register the MLflow model and promote Staging → Production ([docs/mlflow_guide.md](docs/mlflow_guide.md)).
 - Add a GitHub Actions job that retrains and fails the build if the quality gate drops.

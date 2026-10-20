@@ -384,7 +384,7 @@ How to read the numbers, slowly:
 
 Feature importance is a ranked list of encoded columns the trees used. Names look like `cat__Contract_Month-to-month` because the one-hot encoder prefixed them. High rank means “the model split on this a lot.” It is an explanation aid, not a proof of cause.
 
-MLflow: by default a local experiment under `mlruns/`. Set `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` to log to a VM tracking server and compare runs in the UI. See `docs/mlflow_tracking.md`. The JSON files under `artifacts/metrics/` remain a terminal-readable source of truth.
+MLflow: by default a local experiment under `mlruns/`. Set `MLFLOW_TRACKING_URI=http://127.0.0.1:5000` to log to a VM tracking server and compare runs in the UI. See `docs/mlflow_guide.md`. The JSON files under `artifacts/metrics/` remain a terminal-readable source of truth.
 
 `git status` will show new untracked or ignored paths under `data/raw/telco_churn.csv`, `artifacts/`, and `mlruns/`. Those are generated outputs. Do not commit them.
 
