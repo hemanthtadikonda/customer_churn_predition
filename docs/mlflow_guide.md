@@ -357,6 +357,8 @@ Expect `model_source: "mlflow_registry"` and `model_uri` matching `MLFLOW_MODEL_
 
 **Docker:** `mlops/docker-compose.yml` mounts local `artifacts/`. For registry serving, pass `MLFLOW_TRACKING_URI` and `MLFLOW_MODEL_URI` in `environment` and ensure the container can reach the server and artifact store (S3 credentials if applicable).
 
+**Kubernetes (KServe):** same env vars in `mlops/kserve/inference-service.yaml`; see **[kserve_serving.md](kserve_serving.md)**.
+
 </details>
 
 ---

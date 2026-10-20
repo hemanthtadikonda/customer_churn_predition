@@ -189,6 +189,10 @@ uvicorn api.main:app --reload
 
 Registry and deploy details are in the same guide: **[docs/mlflow_guide.md](docs/mlflow_guide.md)** (Part 2).
 
+## KServe (Kubernetes)
+
+Deploy the registry model (e.g. `@Staging`) with the custom KServe image and `InferenceService` manifest: **[docs/kserve_serving.md](docs/kserve_serving.md)**.
+
 ## Docker
 
 Train first so `artifacts/models/churn_pipeline.joblib` exists, then:

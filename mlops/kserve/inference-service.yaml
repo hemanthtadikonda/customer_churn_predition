@@ -1,0 +1,50 @@
+# Custom predictor image that loads models:/customer-churn-xgboost@Staging via MLflow.
+# Build: docker build -f mlops/Dockerfile.kserve -t customer-churn-kserve:latest .
+# Apply: kubectl apply -f mlops/kserve/inference-service.yaml
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: customer-churn-xgboost
+  labels:
+    app: customer-churn-prediction
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 3
+    containers:
+      - name: kserve-container
+        image: customer-churn-kserve:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 8080
+            protocol: TCP
+        env:
+          - name: MLFLOW_TRACKING_URI
+            # Reachable from the pod (not 127.0.0.1 on your laptop). Examples:
+            # - http://mlflow.mlops.svc.cluster.local:5000
+            # - http://<vm-private-ip>:5000
+            value: "http://mlflow.mlops.svc.cluster.local:5000"
+          - name: MLFLOW_MODEL_URI
+            value: "models:/customer-churn-xgboost@Staging"
+          # If MLflow artifacts are on S3, mount AWS creds (see secret below) or IRSA.
+          # - name: AWS_DEFAULT_REGION
+          #   value: "us-east-1"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "1Gi"
+        readinessProbe:
+          httpGet:
+            path: /v1/models/customer-churn-xgboost/ready
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /v1/models/customer-churn-xgboost/ready
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10

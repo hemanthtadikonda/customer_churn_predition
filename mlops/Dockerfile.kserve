@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+COPY requirements.txt .
+COPY mlops/requirements-kserve.txt .
+RUN pip install --no-cache-dir -r requirements.txt -r requirements-kserve.txt
+
+COPY configs ./configs
+COPY ml ./ml
+
+# Optional fallback when MLFLOW_MODEL_URI is unset (local joblib).
+COPY artifacts ./artifacts
+
+ENV KSERVE_HTTP_PORT=8080
+EXPOSE 8080
+
+CMD ["python", "-m", "ml.serving.kserve_model"]
