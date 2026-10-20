@@ -193,12 +193,13 @@ Registry and deploy details are in the same guide: **[docs/mlflow_guide.md](docs
 
 Serve **`models:/customer-churn-xgboost@Staging`** (or Production) on a **kind** cluster with **KServe Standard mode**:
 
-1. Install KServe (release script v0.20+) and verify CRDs — see **[docs/kserve_serving.md](docs/kserve_serving.md)**.
-2. `docker build -f mlops/Dockerfile.kserve -t customer-churn-kserve:latest .`
-3. `kind load docker-image customer-churn-kserve:latest --name mlops` (match your cluster name).
-4. `envsubst < mlops/kserve/inference-service-kind.yaml | kubectl apply -f -` with MLflow on the host (`0.0.0.0:5000`).
+1. **Step 0** in the guide: Docker, kubectl, `kind create cluster --name mlops` on Ubuntu EC2.
+2. Install KServe (release script v0.20+) and verify CRDs.
+3. `docker build -f mlops/Dockerfile.kserve -t customer-churn-kserve:latest .`
+4. `kind load docker-image customer-churn-kserve:latest --name mlops`
+5. `envsubst < mlops/kserve/inference-service-kind.yaml | kubectl apply -f -` with MLflow on the host (`0.0.0.0:5000`).
 
-Full step-by-step (install, MLflow networking, port-forward, troubleshooting): **[docs/kserve_serving.md](docs/kserve_serving.md)**.
+Full runbook (kind install, KServe, MLflow networking, port-forward, troubleshooting): **[docs/kserve_serving.md](docs/kserve_serving.md)**.
 
 ## Docker
 

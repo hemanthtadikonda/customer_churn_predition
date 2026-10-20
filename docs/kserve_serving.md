@@ -32,18 +32,95 @@ The predictor loads the same sklearn pipeline as FastAPI (`ml/serving/predictor.
 
 Pods must reach MLflow at a **host-reachable** URL. `http://127.0.0.1:5000` inside the pod is wrong — that is the pod, not the VM.
 
-## Prerequisites
+## Prerequisites (after Step 0)
 
-1. **kind** cluster with `kubectl` context set (this project often uses cluster name **`mlops`**, node `mlops-control-plane`).
+1. **kind** cluster **`mlops`** with context `kind-mlops` and node `mlops-control-plane` **Ready**.
 2. **MLflow** tracking server on HTTP(S), model registered with alias **Staging** ([mlflow_guide.md](mlflow_guide.md)).
-3. **Docker** on the VM to build `customer-churn-kserve:latest`.
 
-Confirm context and cluster name:
+---
+
+## Step 0 — Install Docker, kubectl, and kind (Ubuntu EC2)
+
+These steps follow the official [kind quick start](https://kind.sigs.k8s.io/docs/user/quick-start/). Run them once on a fresh Ubuntu EC2 (or similar) VM before KServe.
+
+### 0.1 — Docker
 
 ```bash
-kubectl config current-context    # e.g. kind-mlops
-kind get clusters                 # e.g. mlops
-kubectl get nodes
+sudo apt-get update
+sudo apt-get install -y docker.io
+sudo systemctl enable --now docker
+
+sudo usermod -aG docker "$USER"
+newgrp docker
+```
+
+Verify:
+
+```bash
+docker --version
+docker ps
+```
+
+### 0.2 — kubectl
+
+```bash
+sudo snap install kubectl --classic
+kubectl version --client
+```
+
+### 0.3 — kind
+
+Downloads the binary for **x86_64** or **ARM64**:
+
+```bash
+ARCH=$(uname -m)
+
+case "$ARCH" in
+  x86_64) KIND_ARCH=amd64 ;;
+  aarch64) KIND_ARCH=arm64 ;;
+  *) echo "Unsupported architecture: $ARCH"; exit 1 ;;
+esac
+
+curl -Lo kind "https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-${KIND_ARCH}"
+chmod +x kind
+sudo mv kind /usr/local/bin/kind
+
+kind version
+```
+
+### 0.4 — Create the cluster
+
+```bash
+kind create cluster --name mlops --wait 5m
+```
+
+kind pulls a Kubernetes node image and creates a single-node cluster by default.
+
+### 0.5 — Verify the cluster
+
+```bash
+kubectl cluster-info --context kind-mlops
+kubectl get nodes -o wide
+kubectl get pods -A
+kind get clusters
+```
+
+Expected: one node (e.g. `mlops-control-plane`) in **Ready** status.
+
+### 0.6 — Smoke test (optional nginx deployment)
+
+```bash
+kubectl create deployment nginx --image=nginx:stable
+kubectl rollout status deployment/nginx
+kubectl get deployments
+kubectl get pods
+```
+
+Confirm context before continuing to KServe:
+
+```bash
+kubectl config current-context    # kind-mlops
+kubectl config use-context kind-mlops   # if needed
 ```
 
 ---
@@ -76,17 +153,31 @@ If `kubectl apply` fails with *no matches for kind InferenceService*, KServe is 
 
 ## Step 2 — MLflow on the host (reachable from pods)
 
-On the VM (separate venv under `~/mlflow-setup`), start the server so **pods on the Docker bridge can connect**:
+On the VM (separate venv under `~/mlflow-setup`), start the server so **pods on the Docker bridge can connect**.
+
+Do **not** type a literal `...` at the end of the command — MLflow will fail with *unexpected extra argument (...)*. Copy the full block below (same as [mlflow_guide.md](mlflow_guide.md)):
 
 ```bash
 cd ~/mlflow-setup
 source .venv/bin/activate
 mlflow server \
-  --host 0.0.0.0 \
-  --port 5000 \
   --backend-store-uri sqlite:///mlflow.db \
   --default-artifact-root ./mlartifacts \
+  --host 0.0.0.0 \
+  --port 5000 \
+  --workers 1 \
   --allowed-hosts '*'
+```
+
+Background (survive SSH disconnect):
+
+```bash
+cd ~/mlflow-setup && source .venv/bin/activate
+nohup mlflow server \
+  --backend-store-uri sqlite:///mlflow.db \
+  --default-artifact-root ./mlartifacts \
+  --host 0.0.0.0 --port 5000 --workers 1 --allowed-hosts '*' \
+  > mlflow-server.log 2>&1 &
 ```
 
 From the VM shell, `curl http://127.0.0.1:5000` should work. From a cluster pod you will use the **host gateway IP**, not `127.0.0.1`:
@@ -115,13 +206,14 @@ From the **repo root** (`~/customer_churn_predition`):
 docker build -f mlops/Dockerfile.kserve -t customer-churn-kserve:latest .
 ```
 
-Load into kind. If `kind load` says *no nodes found for cluster "kind"*, pass your cluster name:
+Load into kind (**always pass your cluster name** if it is not the default `kind`):
 
 ```bash
+kind get clusters
 kind load docker-image customer-churn-kserve:latest --name mlops
 ```
 
-(`kind get clusters` shows the name.)
+If you omit `--name mlops`, you get *no nodes found for cluster "kind"* when the cluster is named `mlops`.
 
 ---
 
@@ -129,15 +221,26 @@ kind load docker-image customer-churn-kserve:latest --name mlops
 
 Always run `kubectl apply` from the repo root (or use the full path). Applying from `~` fails with *path does not exist*.
 
+**Sync the repo** (needed for `inference-service-kind.yaml` on older clones):
+
+```bash
+cd ~/customer_churn_predition
+git pull origin dev
+test -f mlops/kserve/inference-service-kind.yaml && echo OK || echo "missing — git pull dev"
+```
+
 **Option A — kind + MLflow on same VM (recommended for lab):**
+
+Requires `gettext` package for `envsubst` (`sudo apt-get install -y gettext-base` if missing).
 
 ```bash
 cd ~/customer_churn_predition
 export MLFLOW_HOST_IP="$(ip -4 route show default | awk '{print $3}')"
+echo "MLFLOW_HOST_IP=$MLFLOW_HOST_IP"
 envsubst < mlops/kserve/inference-service-kind.yaml | kubectl apply -f -
 ```
 
-**Option B — edit** `mlops/kserve/inference-service.yaml` and set `MLFLOW_TRACKING_URI` to a URL pods can resolve, then:
+**Option B — edit** `mlops/kserve/inference-service.yaml` and set `MLFLOW_TRACKING_URI` to e.g. `http://<MLFLOW_HOST_IP>:5000` (not `127.0.0.1`), then:
 
 ```bash
 kubectl apply -f mlops/kserve/inference-service.yaml
@@ -242,6 +345,9 @@ Then POST to `http://127.0.0.1:8080` with the same JSON as above.
 | `Unable to download artifacts` | S3 or artifact root | Align MLflow `--default-artifact-root` with pod credentials |
 | `READY False`, ingress warnings only | No Istio on Standard mode | Ignore ingress; fix predictor pod + port-forward |
 | `quick_install.sh` 404 | Script moved | Use release URL in Step 1 |
+| `unexpected extra argument (...)` | Typed `...` literally | Use full `mlflow server` block in Step 2 |
+| `inference-service-kind.yaml: No such file` | Old clone | `git pull origin dev` |
+| `envsubst: command not found` | Package missing | `sudo apt-get install -y gettext-base` |
 
 **Tests** (V2 tensor parsing):
 
