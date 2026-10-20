@@ -7,6 +7,8 @@ metadata:
   name: customer-churn-xgboost
   labels:
     app: customer-churn-prediction
+  annotations:
+    serving.kserve.io/deploymentMode: Standard
 spec:
   predictor:
     minReplicas: 1
@@ -40,11 +42,11 @@ spec:
           httpGet:
             path: /v1/models/customer-churn-xgboost/ready
             port: 8080
-          initialDelaySeconds: 15
+          initialDelaySeconds: 45
           periodSeconds: 5
         livenessProbe:
           httpGet:
             path: /v1/models/customer-churn-xgboost/ready
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10

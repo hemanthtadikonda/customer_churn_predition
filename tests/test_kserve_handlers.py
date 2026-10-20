@@ -26,6 +26,23 @@ def test_v2_tensor_single_row(trained_predictor, sample_df):
     assert len(out["predictions"]) == 1
 
 
+def test_v2_tensor_flat_batch(trained_predictor, sample_df):
+    rows = sample_df.drop(columns=["customerID", "Churn"]).iloc[:2]
+    flat = []
+    for _, series in rows.iterrows():
+        flat.extend(series[col] for col in FEATURE_COLUMNS)
+    inputs = [
+        {
+            "name": "features",
+            "shape": [2, len(FEATURE_COLUMNS)],
+            "datatype": "FP32",
+            "data": flat,
+        }
+    ]
+    out = predict_v2_inputs(inputs, trained_predictor, FEATURE_COLUMNS)
+    assert len(out["predictions"]) == 2
+
+
 def test_run_predict_routes_v1(trained_predictor, sample_df):
     row = sample_df.drop(columns=["customerID", "Churn"]).iloc[0].to_dict()
     out = run_predict({"instances": [row]}, trained_predictor, FEATURE_COLUMNS)

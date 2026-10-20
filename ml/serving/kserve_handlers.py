@@ -21,10 +21,55 @@ def predict_v1_body(body: dict[str, Any], predictor: ChurnPredictor) -> dict[str
     return {"predictions": predictions}
 
 
+def _coerce_scalar(value: Any) -> Any:
+    if hasattr(value, "item"):
+        return value.item()
+    return value
+
+
 def _tensor_row_to_dict(row: list[Any], names: list[str]) -> dict[str, Any]:
-    if len(row) != len(names):
-        raise ValueError(f"Expected {len(names)} feature values, got {len(row)}.")
-    return dict(zip(names, row))
+    values = [_coerce_scalar(v) for v in row]
+    if len(values) != len(names):
+        raise ValueError(f"Expected {len(names)} feature values, got {len(values)}.")
+    return dict(zip(names, values))
+
+
+def _rows_from_tensor_data(
+    data: list[Any],
+    shape: list[Any] | None,
+    feature_names: list[str],
+) -> list[dict[str, Any]]:
+    """Parse KServe V2 tensor ``data`` (flat or nested) into feature dict rows."""
+    if not data:
+        raise ValueError("Tensor data must not be empty.")
+
+    if isinstance(data[0], dict):
+        return data
+
+    if shape and len(shape) == 2:
+        n_rows, n_cols = int(shape[0]), int(shape[1])
+        if n_cols != len(feature_names):
+            raise ValueError(
+                f"Tensor width {n_cols} does not match {len(feature_names)} feature columns."
+            )
+        if isinstance(data[0], (list, tuple)):
+            return [_tensor_row_to_dict(list(row), feature_names) for row in data]
+        flat = [_coerce_scalar(v) for v in data]
+        expected = n_rows * n_cols
+        if len(flat) != expected:
+            raise ValueError(
+                f"Expected {expected} scalar values for shape {shape}, got {len(flat)}."
+            )
+        return [
+            _tensor_row_to_dict(flat[i * n_cols : (i + 1) * n_cols], feature_names)
+            for i in range(n_rows)
+        ]
+
+    if len(data) != len(feature_names):
+        raise ValueError(
+            f"Expected {len(feature_names)} scalar values for one row, got {len(data)}."
+        )
+    return [_tensor_row_to_dict(data, feature_names)]
 
 
 def predict_v2_inputs(
@@ -42,25 +87,9 @@ def predict_v2_inputs(
     shape = tensor_input.get("shape")
     datatype = str(tensor_input.get("datatype", "FP32")).upper()
 
-    rows: list[dict[str, Any]]
-    if isinstance(data, list) and data and isinstance(data[0], dict):
-        rows = data
-    elif isinstance(data, list):
-        if shape and len(shape) == 2:
-            n_cols = int(shape[1])
-            if n_cols != len(feature_names):
-                raise ValueError(
-                    f"Tensor width {n_cols} does not match {len(feature_names)} feature columns."
-                )
-            rows = [_tensor_row_to_dict(list(row), feature_names) for row in data]
-        else:
-            if len(data) != len(feature_names):
-                raise ValueError(
-                    f"Expected {len(feature_names)} scalar values for one row, got {len(data)}."
-                )
-            rows = [_tensor_row_to_dict(data, feature_names)]
-    else:
+    if not isinstance(data, list):
         raise ValueError("Unsupported V2 input data format.")
+    rows = _rows_from_tensor_data(data, shape, feature_names)
 
     if datatype not in {"FP32", "FP64", "BYTES", "BOOL"}:
         raise ValueError(f"Unsupported datatype: {datatype}")
